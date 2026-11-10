@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>نظام إدارة الموظفين والزونات والخطط اليومية - الكوت</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- togeojson Library for parsing KML -->
+  <script src="https://unpkg.com/@tmcw/togeojson@5.8.1/dist/togeojson.umd.js"></script>
+  <!-- Google Fonts - Cairo -->
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Cairo', sans-serif; }
+    #map { height: 440px; border-radius: 12px; z-index: 10; }
+    .status-pulse {
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+      animation: pulse 1.6s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+      70% { box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col justify-between">
+
+  <!-- Header -->
+  <header class="bg-slate-900 text-white shadow-md sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <div class="bg-blue-600 p-2 rounded-lg"><i class="fa-solid fa-network-wired text-xl"></i></div>
+        <div>
+          <h1 class="font-bold text-lg leading-tight">نظام متابعة الميدان والخطط اليومية - الكوت</h1>
+          <p class="text-xs text-slate-400">Target Plan (40 Users/Day) & Daily/Monthly Archive</p>
+        </div>
+      </div>
+      <div id="userHeaderInfo" class="hidden flex items-center gap-4">
+        <div class="text-left hidden sm:block">
+          <p id="headerUserName" class="font-bold text-sm text-blue-400">المدير حسن</p>
+          <span id="headerUserRole" class="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">مدير النظام</span>
+        </div>
+        <button onclick="logout()" class="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-2 rounded-lg font-bold transition flex items-center gap-1">
+          <i class="fa-solid fa-right-from-bracket"></i> خروج
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Login Section -->
+  <div id="loginSection" class="max-w-md w-full mx-auto my-auto p-6">
+    <div class="bg-white p-8 rounded-2xl shadow-xl border border-slate-200">
+      <div class="text-center mb-6">
+        <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">
+          <i class="fa-solid fa-user-shield"></i>
+        </div>
+        <h2 class="text-2xl font-bold text-slate-800">تسجيل الدخول للنظام</h2>
+        <p class="text-xs text-slate-500 mt-1">ادخل اسم المستخدم أو رقم الهاتف وكلمة المرور</p>
+      </div>
+
+      <form id="loginForm" onsubmit="handleLogin(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">اسم المستخدم / رقم الهاتف</label>
+          <div class="relative">
+            <span class="absolute right-3 top-3 text-slate-400"><i class="fa-solid fa-user"></i></span>
+            <input type="text" id="loginId" required placeholder="أدخل اليوزر أو رقم الهاتف" class="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">كلمة المرور</label>
+          <div class="relative">
+            <span class="absolute right-3 top-3 text-slate-400"><i class="fa-solid fa-lock"></i></span>
+            <input type="password" id="loginPassword" required placeholder="••••••••" class="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
+          </div>
+        </div>
+
+        <div id="loginError" class="hidden text-xs text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-200 text-center font-bold"></div>
+
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-md hover:shadow-lg transition text-sm">
+          دخول للنظام <i class="fa-solid fa-arrow-left me-1"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Manager View -->
+  <div id="managerDashboard" class="hidden max-w-7xl w-full mx-auto p-4 space-y-6 my-4">
+    <!-- Navigation Tabs -->
+    <div class="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+      <button id="tabMapBtn" onclick="switchManagerTab('mapTab')" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition">
+        <i class="fa-solid fa-map-location-dot me-1"></i> الخريطة المباشرة وتخصيص الزونات
+      </button>
+      <button id="tabReportBtn" onclick="switchManagerTab('reportTab')" class="bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg text-xs font-bold transition">
+        <i class="fa-solid fa-chart-line me-1"></i> التقرير اليومي (Plan 40)
+      </button>
+      <button id="tabArchiveBtn" onclick="switchManagerTab('archiveTab')" class="bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg text-xs font-bold transition">
+        <i class="fa-solid fa-box-archive me-1"></i> أرشيف التقارير (يومي وشري Excel)
+      </button>
+      <button id="tabFeedbackBtn" onclick="switchManagerTab('feedbackTab')" class="bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg text-xs font-bold transition">
+        <i class="fa-solid fa-comments me-1"></i> ملاحظات وفيدباك الزونات
+      </button>
+      <button id="tabUsersBtn" onclick="switchManagerTab('usersTab')" class="bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg text-xs font-bold transition">
+        <i class="fa-solid fa-users-gear me-1"></i> إدارة الحسابات والمدراء
+      </button>
+    </div>
+
+    <!-- TAB 1: MAP & FLEET & KML UPLOAD -->
+    <div id="mapTab" class="space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+          <div>
+            <p class="text-xs font-bold text-slate-400">إجمالي الموظفين الميدانيين</p>
+            <p id="kpiStaffCount" class="text-2xl font-extrabold text-slate-800">3</p>
+          </div>
+          <div class="bg-blue-50 text-blue-600 p-3 rounded-xl"><i class="fa-solid fa-users text-xl"></i></div>
+        </div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+          <div>
+            <p class="text-xs font-bold text-slate-400">إجمالي اليوزريات المنجزة اليوم</p>
+            <p id="kpiTotalUsersToday" class="text-2xl font-extrabold text-green-600">0 / 120</p>
+          </div>
+          <div class="bg-green-50 text-green-600 p-3 rounded-xl"><i class="fa-solid fa-user-check text-xl"></i></div>
+        </div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+          <div>
+            <p class="text-xs font-bold text-slate-400">ملاحظات الفيدباك الواردة</p>
+            <p id="kpiFeedbackCount" class="text-2xl font-extrabold text-indigo-600">0</p>
+          </div>
+          <div class="bg-indigo-50 text-indigo-600 p-3 rounded-xl"><i class="fa-solid fa-comment-dots text-xl"></i></div>
+        </div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+          <div>
+            <p class="text-xs font-bold text-slate-400">البث المباشر (الكوت)</p>
+            <p id="kpiActiveCount" class="text-2xl font-extrabold text-amber-600">0</p>
+          </div>
+          <div class="bg-amber-50 text-amber-600 p-3 rounded-xl"><i class="fa-solid fa-satellite-dish text-xl"></i></div>
+        </div>
+      </div>
+
+      <!-- Map & Controls -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-2 bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+          <div class="flex flex-wrap justify-between items-center gap-2">
+            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+              <i class="fa-solid fa-map-location-dot text-blue-600"></i> خريطة الكوت التفاعلية واللايف لوكيشن
+            </h3>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-slate-600">تصفية حسب الزون:</span>
+              <select id="zoneFilter" onchange="filterMapByZone()" class="text-xs bg-slate-50 border border-slate-300 rounded-lg p-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="ALL">عرض جميع الزونات</option>
+              </select>
+            </div>
+          </div>
+          <div id="map"></div>
+        </div>
+
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+          <!-- Upload KML Box -->
+          <div class="bg-blue-50 border border-blue-200 p-3 rounded-xl space-y-2">
+            <h4 class="font-bold text-xs text-blue-900 flex items-center gap-1">
+              <i class="fa-solid fa-file-code text-blue-600"></i> استيراد ملف الزونات KML
+            </h4>
+            <input type="file" id="kmlFileInput" accept=".kml" onchange="handleKMLUpload(event)" class="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer">
+            <p class="text-[10px] text-slate-500">ارفع ملف KML لاستخراج قائمة الزونات ونقاط الـ FAT تلقائياً في خيارات التخصيص.</p>
+          </div>
+
+          <!-- Zone Assignment Section -->
+          <div class="border-b pb-2 flex justify-between items-center">
+            <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2">
+              <i class="fa-solid fa-map-pin text-blue-600"></i> تحديـد وتخصيص الزونات لكادر الميدان
+            </h3>
+            <span class="text-[10px] bg-blue-50 text-blue-700 font-extrabold px-2 py-0.5 rounded border border-blue-200">صلاحية المدير</span>
+          </div>
+          
+          <div id="staffList" class="space-y-3 max-h-[340px] overflow-y-auto pr-1">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: DAILY REPORT -->
+    <div id="reportTab" class="hidden space-y-6">
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+        <div class="flex flex-wrap justify-between items-center gap-2 border-b pb-3">
+          <div>
+            <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+              <i class="fa-solid fa-clipboard-list text-blue-600"></i> التقرير اليومي لإنجاز الموظفين والمستهدف (40 يوزر/يوم)
+            </h3>
+            <p class="text-xs text-slate-500">تاريخ اليوم: <span id="reportDate"></span></p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="saveTodayReportToArchive()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition flex items-center gap-1 shadow-sm">
+              <i class="fa-solid fa-floppy-disk"></i> حفظ وأرشفة تقرير اليوم
+            </button>
+            <button onclick="exportReportToCSV()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition flex items-center gap-1 shadow-sm">
+              <i class="fa-solid fa-file-excel"></i> تصدير التقرير اليومي (Excel)
+            </button>
+            <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold px-3 py-2 rounded-lg transition flex items-center gap-1 shadow-sm">
+              <i class="fa-solid fa-print"></i> طباعة
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs text-right">
+            <thead class="bg-slate-100 text-slate-700 font-bold border-b">
+              <tr>
+                <th class="p-3">اسم الموظف</th>
+                <th class="p-3">الزون المخصص</th>
+                <th class="p-3">التاركت اليومي</th>
+                <th class="p-3">اليوزريات المنجزة</th>
+                <th class="p-3">المتبقي للوصول للهدف</th>
+                <th class="p-3">نسبة الإنجاز %</th>
+                <th class="p-3">حالة البث والتحديث</th>
+              </tr>
+            </thead>
+            <tbody id="dailyReportTableBody" class="divide-y divide-slate-100">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: ARCHIVE & MONTHLY REPORT TAB -->
+    <div id="archiveTab" class="hidden space-y-6">
+      <!-- Monthly Cumulative Summary -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+        <div class="flex flex-wrap justify-between items-center gap-2 border-b pb-3">
+          <div>
+            <h3 class="font-bold text-slate-800 text-base flex items-center gap-2">
+              <i class="fa-solid fa-calendar-check text-blue-600"></i> التقرير والتجميع الشهري لجميع الموظفين
+            </h3>
+            <p class="text-xs text-slate-500">حساب إجمالي اليوزريات المنجزة طوال الشهر وتصديرها بملف Excel واحد</p>
+          </div>
+          <button onclick="exportMonthlyReportToCSV()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition flex items-center gap-1 shadow">
+            <i class="fa-solid fa-file-excel text-sm me-1"></i> تصدير التقرير الشهري الكامل (Excel / CSV)
+          </button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs text-right">
+            <thead class="bg-slate-100 text-slate-700 font-bold border-b">
+              <tr>
+                <th class="p-3">اسم الموظف</th>
+                <th class="p-3">عدد الأيام المسجلة</th>
+                <th class="p-3">إجمالي التاركت الشهري</th>
+                <th class="p-3">مجموع اليوزريات المنجزة</th>
+                <th class="p-3">متوسط نسبة الإنجاز اليومية</th>
+                <th class="p-3">تقييم الأداء الشهري</th>
+              </tr>
+            </thead>
+            <tbody id="monthlyReportTableBody" class="divide-y divide-slate-100">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Saved Daily Archives Section -->
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+        <h3 class="font-bold text-slate-800 text-base flex items-center gap-2 border-b pb-3">
+          <i class="fa-solid fa-folder-open text-blue-600"></i> سجل الأرشيف اليومي المحفوظ
+        </h3>
+        
+        <div id="dailyArchiveContainer" class="space-y-4">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: ZONE FEEDBACK LIST -->
+    <div id="feedbackTab" class="hidden space-y-6">
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+        <h3 class="font-bold text-slate-800 text-base flex items-center gap-2 border-b pb-3">
+          <i class="fa-solid fa-comments text-blue-600"></i> الملاحظات والتغذية الراجعة من الميدان (Zone Feedback)
+        </h3>
+        
+        <div id="feedbackListContainer" class="space-y-3">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: USER MANAGEMENT -->
+    <div id="usersTab" class="hidden space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+          <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2 border-b pb-2">
+            <i class="fa-solid fa-user-plus text-blue-600"></i> إضافة حساب / تغيير يوزر وباسورد
+          </h3>
+          <form onsubmit="handleSaveUser(event)" class="space-y-3">
+            <input type="hidden" id="editUserId">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">الاسم الكامل</label>
+              <input type="text" id="formName" required placeholder="مثال: المدير علي / الموظف أحمد" class="w-full text-xs p-2.5 bg-slate-50 border rounded-lg">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">اسم المستخدم (Username / الهاتف)</label>
+              <input type="text" id="formUsername" required placeholder="اسم المستخدم أو رقم الهاتف" class="w-full text-xs p-2.5 bg-slate-50 border rounded-lg">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">كلمة المرور الجديدة</label>
+              <input type="password" id="formPassword" required placeholder="••••••••" class="w-full text-xs p-2.5 bg-slate-50 border rounded-lg">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">نوع الحساب (الدور)</label>
+              <select id="formRole" class="w-full text-xs p-2.5 bg-slate-50 border rounded-lg font-bold">
+                <option value="manager">مدير نظام (Manager)</option>
+                <option value="staff">موظف ميداني (Staff)</option>
+              </select>
+            </div>
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-3 rounded-lg shadow transition">
+              <i class="fa-solid fa-save me-1"></i> حفظ الحساب / التحديث
+            </button>
+          </form>
+        </div>
+
+        <div class="lg:col-span-2 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+          <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2 border-b pb-2">
+            <i class="fa-solid fa-users-viewfinder text-blue-600"></i> قائمة المدراء والموظفين المسجلين بالنظام
+          </h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs text-right">
+              <thead class="bg-slate-100 text-slate-700 font-bold border-b">
+                <tr>
+                  <th class="p-3">الاسم</th>
+                  <th class="p-3">اسم المستخدم</th>
+                  <th class="p-3">كلمة المرور</th>
+                  <th class="p-3">نوع الحساب</th>
+                  <th class="p-3 text-center">إجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="usersTableBody" class="divide-y divide-slate-100">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Staff View (With Plan 40 Target & Feedback Entry) -->
+  <div id="staffDashboard" class="hidden max-w-lg w-full mx-auto p-4 space-y-5 my-auto">
+    <div class="bg-white p-6 rounded-2xl shadow-xl border border-slate-200 text-center space-y-4">
+      <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto text-2xl">
+        <i class="fa-solid fa-street-view"></i>
+      </div>
+      <div>
+        <h2 id="staffWelcomeName" class="text-xl font-bold text-slate-800">أهلاً بك، الموظف الميداني</h2>
+        <p class="text-xs text-slate-500">نظام بث الموقع المباشر وتوثيق التغذية الراجعة للزون</p>
+      </div>
+
+      <!-- Assigned Zone Banner for Staff -->
+      <div class="bg-gradient-to-r from-blue-900 to-indigo-900 text-white p-3.5 rounded-xl text-right shadow-sm space-y-1">
+        <div class="flex justify-between items-center text-xs opacity-80">
+          <span><i class="fa-solid fa-map-location-dot me-1"></i> الزون المكتف والمخصص لك اليوم من المدير:</span>
+          <span class="bg-blue-600/50 px-2 py-0.5 rounded border border-blue-400 text-[10px]">محدد حالياً</span>
+        </div>
+        <p id="staffAssignedZoneBadge" class="text-lg font-black text-amber-300">غير محدد</p>
+      </div>
+
+      <!-- Plan Target 40 Box -->
+      <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl text-right space-y-3">
+        <div class="flex justify-between items-center">
+          <span class="text-xs font-bold text-blue-900">الخطة والمستهدف اليومي:</span>
+          <span class="text-xs bg-blue-600 text-white font-extrabold px-2.5 py-0.5 rounded-full">40 يوزر / يوم</span>
+        </div>
+        <div class="space-y-1">
+          <div class="flex justify-between text-xs text-slate-700 font-bold">
+            <span>عدد اليوزريات المنجزة اليوم:</span>
+            <span id="staffAchievedCount" class="text-blue-700 font-extrabold text-sm">0</span>
+          </div>
+          <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+            <div id="staffProgressBar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <form onsubmit="handleUpdateStaffCount(event)" class="flex gap-2 pt-1">
+          <input type="number" id="newUsersInput" min="0" placeholder="أدخل عدد اليوزريات التي أنجزتها" required class="flex-1 text-xs p-2 bg-white border rounded-lg">
+          <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-2 rounded-lg text-xs">
+            تحديث العدد
+          </button>
+        </form>
+      </div>
+
+      <!-- Zone Feedback Entry Form -->
+      <div class="bg-indigo-50/70 border border-indigo-200 p-4 rounded-xl text-right space-y-2">
+        <h4 class="font-bold text-xs text-indigo-900 flex items-center gap-1">
+          <i class="fa-solid fa-comment-medical text-indigo-600"></i> إرسال ملاحظة / فيدباك عن الزون
+        </h4>
+        <form onsubmit="handleSendFeedback(event)" class="space-y-2">
+          <input type="text" id="feedbackZoneName" placeholder="اسم الزون أو نقطة الـ FAT" required class="w-full text-xs p-2 bg-white border rounded-lg font-bold">
+          <select id="feedbackType" class="w-full text-xs p-2 bg-white border rounded-lg font-bold">
+            <option value="طبيعي">ملاحظة عامة (طبيعي)</option>
+            <option value="مشكلة فنية">مشكلة فنية في الزون</option>
+            <option value="عطل طارئ">عطل طارئ يحتاج صيانة</option>
+            <option value="اقتراح">اقتراح تحسين تغطية</option>
+          </select>
+          <textarea id="feedbackText" rows="2" placeholder="اكتب تفاصيل الملاحظة هنا..." required class="w-full text-xs p-2 bg-white border rounded-lg"></textarea>
+          
+          <div class="flex items-center gap-2 pt-1">
+            <input type="checkbox" id="attachLocationCheck" class="rounded text-blue-600 focus:ring-0 cursor-pointer">
+            <label for="attachLocationCheck" class="text-[11px] font-bold text-slate-700 cursor-pointer">إرفاق إحداثيات موقعي الجغرافي الحالي مع الملاحظة</label>
+          </div>
+
+          <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg text-xs shadow transition">
+            <i class="fa-solid fa-paper-plane me-1"></i> إرسال الفيدباك إلى المدير
+          </button>
+        </form>
+      </div>
+
+      <!-- Live Switch Card -->
+      <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 text-right space-y-3">
+        <div class="flex justify-between items-center">
+          <span class="text-xs font-bold text-slate-700">حالة البث المباشر (الكوت):</span>
+          <span id="trackingStatusBadge" class="text-xs bg-slate-200 text-slate-700 px-2.5 py-1 rounded-full font-bold">متوقف</span>
+        </div>
+
+        <div class="flex gap-2 pt-2">
+          <button id="startBtn" onclick="toggleTracking(true)" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded-lg text-xs shadow transition">
+            <i class="fa-solid fa-play me-1"></i> تشغيل اللايف
+          </button>
+          <button id="stopBtn" onclick="toggleTracking(false)" disabled class="flex-1 bg-red-400 text-white font-bold py-2.5 rounded-lg text-xs opacity-60 cursor-not-allowed transition">
+            <i class="fa-solid fa-stop me-1"></i> إيقاف
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="bg-slate-900 text-slate-500 text-center py-3 text-xs border-t border-slate-800">
+    <p>نظام إدارة الموظفين والزونات والخطط اليومية والشهرية - الكوت © 2026</p>
+  </footer>
+
+  <script>
+    const DEFAULT_USERS = [
+      { id: 'hassan', phone: '07700000001', name: 'المدير حسن (الرئيسي)', pass: 'Hassan@2026', role: 'manager' },
+      { id: 'fares', phone: '07700000002', name: 'المدير فارس', pass: 'Fares@2026', role: 'manager' },
+      { id: 'ghazwan', phone: '07700000003', name: 'غزوان الميداني', pass: 'Ghazwan@2026', role: 'staff' },
+      { id: 'abbas', phone: '07700000004', name: 'عباس الميداني', pass: 'Abbas@2026', role: 'staff' },
+      { id: 'mohammed', phone: '07700000005', name: 'محمد الميداني', pass: 'Mohammed@2026', role: 'staff' }
+    ];
+
+    let currentUser = null;
+    let watchId = null;
+    let map = null;
+    let markers = {};
+    let kmlLayerGroup = null;
+    let loadedZones = new Set([
+      'زون الكوت 1 - الحي العصري',
+      'زون الكوت 2 - منطقة الهورة',
+      'زون الكوت 3 - منطقة الانوار',
+      'زون الكوت 4 - محيط الجامعة',
+      'FAT-Node 101',
+      'FAT-Node 102'
+    ]);
+    let lastKnownCoords = null;
+
+    function getUsers() {
+      const stored = localStorage.getItem('fleet_users');
+      if (!stored) {
+        localStorage.setItem('fleet_users', JSON.stringify(DEFAULT_USERS));
+        return DEFAULT_USERS;
+      }
+      return JSON.parse(stored);
+    }
+
+    function saveUsers(users) {
+      localStorage.setItem('fleet_users', JSON.stringify(users));
+    }
+
+    function initState() {
+      getUsers();
+      if (!localStorage.getItem('fleet_staff_locations')) {
+        const defaultLocations = {
+          'ghazwan': { name: 'غزوان الميداني', phone: '07700000003', lat: 32.5080, lng: 45.8210, status: 'نشط', lastSync: 'الآن', achievedUsers: 38, target: 40, zone: 'زون الكوت 1 - الحي العصري' },
+          'abbas': { name: 'عباس الميداني', phone: '07700000004', lat: 32.5120, lng: 45.8290, status: 'نشط', lastSync: 'الآن', achievedUsers: 42, target: 40, zone: 'زون الكوت 2 - منطقة الهورة' },
+          'mohammed': { name: 'محمد الميداني', phone: '07700000005', lat: 32.5020, lng: 45.8150, status: 'نشط', lastSync: 'الآن', achievedUsers: 40, target: 40, zone: 'زون الكوت 3 - منطقة الانوار' }
+        };
+        localStorage.setItem('fleet_staff_locations', JSON.stringify(defaultLocations));
+      }
+      if (!localStorage.getItem('fleet_feedbacks')) {
+        localStorage.setItem('fleet_feedbacks', JSON.stringify([]));
+      }
+      if (!localStorage.getItem('fleet_daily_archive')) {
+        localStorage.setItem('fleet_daily_archive', JSON.stringify([]));
+      }
+    }
+
+    function handleLogin(e) {
+      e.preventDefault();
+      const input = document.getElementById('loginId').value.trim();
+      const pass = document.getElementById('loginPassword').value.trim();
+      const errBox = document.getElementById('loginError');
+
+      const users = getUsers();
+      const user = users.find(u => (u.id === input || u.phone === input) && u.pass === pass);
+      if (user) {
+        currentUser = user;
+        errBox.classList.add('hidden');
+        renderSession();
+      } else {
+        errBox.textContent = 'اسم المستخدم أو كلمة المرور غير صحيحة!';
+        errBox.classList.remove('hidden');
+      }
+    }
+
+    function renderSession() {
+      document.getElementById('loginSection').classList.add('hidden');
+      document.getElementById('userHeaderInfo').classList.remove('hidden');
+      document.getElementById('headerUserName').textContent = currentUser.name;
+      document.getElementById('headerUserRole').textContent = currentUser.role === 'manager' ? 'مدير نظام' : 'موظف ميداني';
+
+      if (currentUser.role === 'manager') {
+        document.getElementById('managerDashboard').classList.remove('hidden');
+        document.getElementById('staffDashboard').classList.add('hidden');
+        document.getElementById('reportDate').textContent = new Date().toLocaleDateString('ar-IQ');
+        initMap();
+        updateZoneDropdowns();
+        renderManagerPanel();
+        renderUsersTable();
+        renderDailyReport();
+        renderArchiveTab();
+        renderFeedbackList();
+        setInterval(renderManagerPanel, 4000);
+      } else {
+        document.getElementById('staffDashboard').classList.remove('hidden');
+        document.getElementById('managerDashboard').classList.add('hidden');
+        document.getElementById('staffWelcomeName').textContent = currentUser.name;
+        loadStaffTargetInfo();
+      }
+    }
+
+    function logout() {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      currentUser = null;
+      document.getElementById('loginSection').classList.remove('hidden');
+      document.getElementById('managerDashboard').classList.add('hidden');
+      document.getElementById('staffDashboard').classList.add('hidden');
+      document.getElementById('userHeaderInfo').classList.add('hidden');
+    }
+
+    function switchManagerTab(tabId) {
+      document.getElementById('mapTab').classList.add('hidden');
+      document.getElementById('reportTab').classList.add('hidden');
+      document.getElementById('archiveTab').classList.add('hidden');
+      document.getElementById('feedbackTab').classList.add('hidden');
+      document.getElementById('usersTab').classList.add('hidden');
+
+      document.getElementById('tabMapBtn').className = "bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg text-xs font-bold transition";
+      document.getElementById('tabReportBtn').className = "bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg text-xs font-bold transition";
+      document.getElementById('tabArchiveBtn').className = "bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg text-xs font-bold transition";
+      document.getElementById('tabFeedbackBtn').className = "bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg text-xs font-bold transition";
+      document.getElementById('tabUsersBtn').className = "bg-slate-200 text-slate-700 hover:bg-slate-300 px-4 py-2 rounded-lg text-xs font-bold transition";
+
+      if (tabId === 'mapTab') {
+        document.getElementById('mapTab').classList.remove('hidden');
+        document.getElementById('tabMapBtn').className = "bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition";
+        if (map) map.invalidateSize();
+      } else if (tabId === 'reportTab') {
+        document.getElementById('reportTab').classList.remove('hidden');
+        document.getElementById('tabReportBtn').className = "bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition";
+        renderDailyReport();
+      } else if (tabId === 'archiveTab') {
+        document.getElementById('archiveTab').classList.remove('hidden');
+        document.getElementById('tabArchiveBtn').className = "bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition";
+        renderArchiveTab();
+      } else if (tabId === 'feedbackTab') {
+        document.getElementById('feedbackTab').classList.remove('hidden');
+        document.getElementById('tabFeedbackBtn').className = "bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition";
+        renderFeedbackList();
+      } else {
+        document.getElementById('usersTab').classList.remove('hidden');
+        document.getElementById('tabUsersBtn').className = "bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition";
+        renderUsersTable();
+      }
+    }
+
+    function initMap() {
+      if (map) return;
+      map = L.map('map').setView([32.5056, 45.8231], 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+      }).addTo(map);
+      kmlLayerGroup = L.layerGroup().addTo(map);
+    }
+
+    function handleKMLUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const kmlText = e.target.result;
+        const dom = new DOMParser().parseFromString(kmlText, 'text/xml');
+        const geojson = toGeoJSON.kml(dom);
+
+        if (kmlLayerGroup) kmlLayerGroup.clearLayers();
+
+        const geoJsonLayer = L.geoJSON(geojson, {
+          style: function(feature) {
+            return { color: '#2563eb', weight: 3, opacity: 0.8, fillColor: '#3b82f6', fillOpacity: 0.15 };
+          },
+          onEachFeature: function(feature, layer) {
+            if (feature.properties && feature.properties.name) {
+              const name = feature.properties.name;
+              loadedZones.add(name);
+              layer.bindPopup(`<div class="p-1 text-right font-sans"><b>الزون / النقطة:</b> ${name}</div>`);
+            }
+          }
+        }).addTo(kmlLayerGroup);
+
+        map.fitBounds(geoJsonLayer.getBounds());
+        updateZoneDropdowns();
+        renderManagerPanel();
+        alert('تم رفع ملف الـ KML وتغذية قائمة الزونات المتاحة بنجاح!');
+      };
+      reader.readAsText(file);
+    }
+
+    function updateZoneDropdowns() {
+      const select = document.getElementById('zoneFilter');
+      select.innerHTML = '<option value="ALL">عرض جميع الزونات</option>';
+      loadedZones.forEach(z => {
+        const opt = document.createElement('option');
+        opt.value = z;
+        opt.textContent = z;
+        select.appendChild(opt);
+      });
+    }
+
+    function filterMapByZone() {
+      const selected = document.getElementById('zoneFilter').value;
+      const locations = JSON.parse(localStorage.getItem('fleet_staff_locations') || '{}');
+      
+      Object.keys(markers).forEach(key => {
+        const s = locations[key];
+        if (selected === 'ALL' || (s && s.zone === selected)) {
+          markers[key].addTo(map);
+        } else {
+          map.removeLayer(markers[key]);
+        }
+      });
+    }
+
+    function renderManagerPanel() {
+      const locations = JSON.parse(localStorage.getItem('fleet_staff_locations') || '{}');
+      const feedbacks = JSON.parse(localStorage.getItem('fleet_feedbacks') || '[]');
+      const users = getUsers();
+      const staffListEl = document.getElementById('staffList');
+      staffListEl.innerHTML = '';
+
+      let activeCount = 0;
+      let totalAchieved = 0;
+      let staffTotal = users.filter(u => u.role === 'staff').length;
+
+      users.filter(u => u.role === 'staff').forEach(staffUser => {
+        const key = staffUser.id;
+        const s = locations[key] || { name: staffUser.name, achievedUsers: 0, zone: 'غير محدد', lastSync: 'غير متوفر' };
+        
+        if (s.lat && s.lng) {
+          activeCount++;
+          if (markers[key]) {
+            markers[key].setLatLng([s.lat, s.lng]);
+          } else {
+            markers[key] = L.marker([s.lat, s.lng]).addTo(map).bindPopup(`<b>${s.name}</b><br>الزون: ${s.zone || 'غير محدد'}<br>الإنجاز اليومي: ${s.achievedUsers || 0} / 40`);
+          }
+        }
+        
+        totalAchieved += (s.achievedUsers || 0);
+
+        let optionsHtml = `<option value="غير محدد" ${!s.zone || s.zone === 'غير محدد' ? 'selected' : ''}>-- اختر الزون المخصص --</option>`;
+        loadedZones.forEach(z => {
+          optionsHtml += `<option value="${z}" ${s.zone === z ? 'selected' : ''}>${z}</option>`;
+        });
+
+        const item = document.createElement('div');
+        item.className = "p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 shadow-sm";
+        item.innerHTML = `
+          <div class="flex justify-between items-center border-b pb-1.5">
+            <span class="font-bold text-xs text-slate-800 flex items-center gap-1">
+              <i class="fa-solid fa-user-tie text-blue-600"></i> ${s.name}
+            </span>
+            <span class="text-[10px] bg-blue-100 text-blue-700 font-extrabold px-2 py-0.5 rounded-full">${s.achievedUsers || 0} / 40 يوزر</span>
+          </div>
+          
+          <div class="space-y-1">
+            <label class="block text-[10px] font-bold text-slate-500">تخصيص الزون من قِبل المدير:</label>
+            <div class="flex gap-1">
+              <select onchange="updateStaffZone('${key}', this.value)" class="w-full text-xs p-1.5 bg-white border border-blue-300 rounded-lg font-bold text-blue-900 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                ${optionsHtml}
+              </select>
+            </div>
+          </div>
+          
+          <div class="flex justify-between items-center text-[10px] text-slate-400 pt-0.5">
+            <span>آخر مزامنة: ${s.lastSync || 'الآن'}</span>
+            <span class="text-green-600 font-bold">بث مباشر</span>
+          </div>
+        `;
+        staffListEl.appendChild(item);
+      });
+
+      document.getElementById('kpiStaffCount').textContent = staffTotal;
+      document.getElementById('kpiTotalUsersToday').textContent = `${totalAchieved} / ${staffTotal * 40}`;
+      document.getElementById('kpiActiveCount').textContent = activeCount;
+      document.getElementById('kpiFeedbackCount').textContent = feedbacks.length;
+    }
+
+    function updateStaffZone(userId, zoneName) {
+      const locations = JSON.parse(localStorage.getItem('fleet_staff_locations') || '{}');
+      if (!locations[userId]) {
+        const users = getUsers();
+        const u = users.find(x => x.id === userId);
+        locations[userId] = { name: u ? u.name : userId, achievedUsers: 0, lat: 32.5056, lng: 45.8231, status: 'نشط', lastSync: 'الآن' };
+      }
+      locations[userId].zone = zoneName;
+      localStorage.setItem('fleet_staff_locations', JSON.stringify(locations));
+      
+      if (markers[userId]) {
+        markers[userId].setPopupContent(`<b>${locations[userId].name}</b><br>الزون: ${zoneName}<br>الإنجاز اليومي: ${locations[userId].achievedUsers || 0} / 40`);
+      }
+      alert(`تم تخصيص الزون [${zoneName}] بنجاح للموظف!`);
+    }
+
+    function renderDailyReport() {
+      const locations = JSON.parse(localStorage.getItem('fleet_staff_locations') || '{}');
+      const users = getUsers().filter(u => u.role === 'staff');
+      const tbody = document.getElementById('dailyReportTableBody');
+      tbody.innerHTML = '';
+
+      users.forEach(u => {
+        const data = locations[u.id] || { achievedUsers: 0, target: 40, status: 'غير نشط', zone: 'غير محدد' };
+        const achieved = data.achievedUsers || 0;
+        const remaining = Math.max(0, 40 - achieved);
+        const percent = Math.min(100, Math.round((achieved / 40) * 100));
+
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-slate-50";
+        tr.innerHTML = `
+          <td class="p-3 font-bold text-slate-800">${u.name}</td>
+          <td class="p-3 font-bold text-blue-700">${data.zone || 'غير محدد'}</td>
+          <td class="p-3 font-bold text-slate-700">40 يوزر</td>
+          <td class="p-3 font-extrabold text-blue-600">${achieved}</td>
+          <td class="p-3 font-bold text-amber-600">${remaining}</td>
+          <td class="p-3">
+            <div class="flex items-center gap-2">
+              <div class="w-16 bg-slate-200 rounded-full h-2">
+                <div class="bg-blue-600 h-2 rounded-full" style="width: ${percent}%"></div>
+              </div>
+              <span class="font-bold text-slate-700 text-[11px]">${percent}%</span>
+            </div>
+          </td>
+          <td class="p-3"><span class="bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded text-[10px]">بث مباشر نشط</span></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function saveTodayReportToArchive() {
+      const locations = JSON.parse(localStorage.getItem('fleet_staff_locations') || '{}');
+      const users = getUsers().filter(u => u.role === 'staff');
+      const archive = JSON.parse(localStorage.getItem('fleet_daily_archive') || '[]');
+      
+      const todayDateStr = new Date().toISOString().slice(0, 10);
+      const todayRecords = [];
+
+      users.forEach(u => {
+        const data = locations[u.id] || { achievedUsers: 0, zone: 'غير محدد' };
+        todayRecords.push({
+          userId: u.id,
+          name: u.name,
+          zone: data.zone || 'غير محدد',
+          target: 40,
+          achieved: data.achievedUsers || 0
+        });
+      });
+
+      const existingIndex = archive.findIndex(a => a.date === todayDateStr);
+      if (existingIndex >= 0) {
+        archive[existingIndex].records = todayRecords;
+      } else {
+        archive.push({ date: todayDateStr, records: todayRecords });
+      }
+
+      localStorage.setItem('fleet_daily_archive', JSON.stringify(archive));
+      alert(`تم حفظ وأرشفة تقرير يوم (${todayDateStr}) بنجاح!`);
+    }
+
+    function renderArchiveTab() {
+      const archive = JSON.parse(localStorage.getItem('fleet_daily_archive') || '[]');
+      const users = getUsers().filter(u => u.role === 'staff');
+      
+      // 1. Render Monthly Summary Table
+      const monthlyBody = document.getElementById('monthlyReportTableBody');
+      monthlyBody.innerHTML = '';
+
+      users.forEach(u => {
+        let totalAchieved = 0;
+        let daysCount = 0;
+
+        archive.forEach(day => {
+          const r = day.records.find(rec => rec.userId === u.id);
+          if (r) {
+            totalAchieved += r.achieved;
+            daysCount++;
+          }
+        });
+
+        const totalTarget = daysCount * 40;
+        const avgPercent = totalTarget > 0 ? Math.round((totalAchieved / totalTarget) * 100) : 0;
+        
+        let performanceBadge = '<span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-bold">لا يوجد أرشيف</span>';
+        if (avgPercent >= 100) performanceBadge = '<span class="bg-green-100 text-green-700 px-2.5 py-1 rounded-full text-[10px] font-extrabold">ممتاز جدأ 🌟</span>';
+        else if (avgPercent >= 80) performanceBadge = '<span class="bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full text-[10px] font-extrabold">جيد جداً 👍</span>';
+        else if (daysCount > 0) performanceBadge = '<span class="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full text-[10px] font-extrabold">يحتاج متابعة ⚠️</span>';
+
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-slate-50";
+        tr.innerHTML = `
+          <td class="p-3 font-bold text-slate-800">${u.name}</td>
+          <td class="p-3 font-bold text-slate-600">${daysCount} أيام</td>
+          <td class="p-3 font-bold text-slate-700">${totalTarget} يوزر</td>
+          <td class="p-3 font-extrabold text-blue-600">${totalAchieved} يوزر</td>
+          <td class="p-3 font-bold text-indigo-700">${avgPercent}%</td>
+          <td class="p-3">${performanceBadge}</td>
+        `;
+        monthlyBody.appendChild(tr);
+      });
+
+      // 2. Render Daily Archive Cards
+      const container = document.getElementById('dailyArchiveContainer');
+      container.innerHTML = '';
+
+      if (archive.length === 0) {
+        container.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">لم يتم أرشفة أي يوم حتى الآن. اضغط على زر "حفظ وأرشفة تقرير اليوم" في تبويب التقرير اليومي.</p>';
+        return;
+      }
+
+      archive.slice().reverse().forEach(day => {
+        const card = document.createElement('div');
+        card.className = "bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-3";
+        
+        let rowsHtml = '';
+        day.records.forEach(r => {
+          rowsHtml += `
+            <tr class="border-b border-slate-100 text-[11px]">
+              <td class="py-1 font-bold">${r.name}</td>
+              <td class="py-1 text-blue-700">${r.zone}</td>
+              <td class="py-1 font-extrabold text-green-600">${r.achieved} / 40</td>
+              <td class="py-1 font-bold text-slate-500">${Math.round((r.achieved/40)*100)}%</td>
+            </tr>
+          `;
+        });
+
+        card.innerHTML = `
+          <div class="flex justify-between items-center border-b pb-2">
+            <span class="font-bold text-xs text-slate-800 flex items-center gap-1">
+              <i class="fa-solid fa-calendar-day text-blue-600"></i> أرشيف يوم: ${day.date}
+            </span>
+            <button onclick="exportSingleDayCSV('${day.date}')" class="bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold px-2.5 py-1 rounded transition">
+              <i class="fa-solid fa-file-excel me-1"></i> تصدير Excel لهذا اليوم
+            </button>
+          </div>
+          <table class="w-full text-right">
+            <thead>
+              <tr class="text-[10px] text-slate-400 font-bold border-b">
+                <th class="pb-1">الموظف</th>
+                <th class="pb-1">الزون</th>
+                <th class="pb-1">المنجز</th>
+                <th class="pb-1">النسبة</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function exportReportToCSV() {
+      const locations = JSON.parse(localStorage.getItem('fleet_staff_locations') || '{}');
+      const users = getUsers().filter(u => u.role === 'staff');
+      
+      let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+      csvContent += "اسم الموظف,الزون المخصص,المستهدف اليومي,اليوزريات المنجزة,المتبقي,نسبة الإنجاز %\n";
+
+      users.forEach(u => {
+        const data = locations[u.id] || { achievedUsers: 0, zone: 'غير محدد' };
+        const achieved = data.achievedUsers || 0;
+        const remaining = Math.max(0, 40 - achieved);
+        const percent = Math.min(100, Math.round((achieved / 40) * 100));
+
+        csvContent += `"${u.name}","${data.zone || 'غير محدد'}",40,${achieved},${remaining},"${percent}%"\n`;
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `تقرير_الكوت_اليومي_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function exportMonthlyReportToCSV() {
+      const archive = JSON.parse(localStorage.getItem('fleet_daily_archive') || '[]');
+      const users = getUsers().filter(u => u.role === 'staff');
+
+      let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+      csvContent += "اسم الموظف,عدد الأيام المؤرشفة,إجمالي التاركت الشهري,مجموع اليوزريات المنجزة,متوسط نسبة الإنجاز %\n";
+
+      users.forEach(u => {
+        let totalAchieved = 0;
+        let daysCount = 0;
+
+        archive.forEach(day => {
+          const r = day.records.find(rec => rec.userId === u.id);
+          if (r) {
+            totalAchieved += r.achieved;
+            daysCount++;
+          }
+        });
+
+        const totalTarget = daysCount * 40;
+        const avgPercent = totalTarget > 0 ? Math.round((totalAchieved / totalTarget) * 100) : 0;
+
+        csvContent += `"${u.name}",${daysCount},${totalTarget},${totalAchieved},"${avgPercent}%"\n`;
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `التقرير_الشهري_التجميعي_الكوت_${new Date().toISOString().slice(0,7)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function exportSingleDayCSV(dateStr) {
+      const archive = JSON.parse(localStorage.getItem('fleet_daily_archive') || '[]');
+      const dayData = archive.find(a => a.date === dateStr);
+      if (!dayData) return;
+
+      let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+      csvContent += `تقرير يوم,${dateStr}\n`;
+      csvContent += "اسم الموظف,الزون,المستهدف,المنجز,نسبة الإنجاز %\n";
+
+      dayData.records.forEach(r => {
+        const percent = Math.round((r.achieved / 40) * 100);
+        csvContent += `"${r.name}","${r.zone}",40,${r.achieved},"${percent}%"\n`;
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `تقرير_يوم_${dateStr}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function renderFeedbackList() {
+      const feedbacks = JSON.parse(localStorage.getItem('fleet_feedbacks') || '[]');
+      const container = document.getElementById('feedbackListContainer');
+      container.innerHTML = '';
+
+      if (feedbacks.length === 0) {
+        container.innerHTML = '<p class="text-xs text-slate-400 text-center py-6">لا توجد ملاحظات أو فيدباك مُرسل حتى الآن.</p>';
+        return;
+      }
+
+      feedbacks.slice().reverse().forEach(fb => {
+        const card = document.createElement('div');
+        let badgeColor = 'bg-blue-100 text-blue-700';
+        if (fb.type === 'عطل طارئ') badgeColor = 'bg-red-100 text-red-700';
+        if (fb.type === 'مشكلة فنية') badgeColor = 'bg-amber-100 text-amber-700';
+
+        card.className = "p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2";
+        card.innerHTML = `
+          <div class="flex justify-between items-center border-b pb-2">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-xs text-slate-800">${fb.staffName}</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeColor}">${fb.type}</span>
+            </div>
+            <span class="text-[10px] text-slate-400">${fb.time}</span>
+          </div>
+          <p class="text-xs font-bold text-slate-700">الزون: ${fb.zone}</p>
+          <p class="text-xs text-slate-600 bg-white p-2.5 rounded-lg border border-slate-200">${fb.text}</p>
+          ${fb.coords ? `<p class="text-[10px] text-blue-600 font-bold"><i class="fa-solid fa-location-dot me-1"></i> الإحداثيات: ${fb.coords.lat.toFixed(5)}, ${fb.coords.lng.toFixed(5)}</p>` : ''}
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function handleSendFeedback(e) {
+      e.preventDefault();
+      const zone = document.getElementById('feedbackZoneName').value.trim();
+      const type = document.getElementById('feedbackType').value;
+      const text = document.getElementById('feedbackText').value.trim();
+      const attachLoc = document.getElementById('attachLocationCheck').checked;
+
+      const feedbacks = JSON.parse(localStorage.getItem('fleet_feedbacks') || '[]');
+      const newFb = {
+        id: Date.now(),
+        staffName: currentUser.name,
+        zone: zone,
+        type: type,
+        text: text,
+        time: new Date().toLocaleTimeString('ar-IQ') + ' - ' + new Date().toLocaleDateString('ar-IQ'),
+        coords: attachLoc ? lastKnownCoords : null
+      };
+
+      feedbacks.push(newFb);
+      localStorage.setItem('fleet_feedbacks', JSON.stringify(feedbacks));
+      document.getElementById('feedbackText').value = '';
+      document.getElementById('attachLocationCheck').checked = false;
+
+      alert('تم إرسال الفيدباك والملاحظات بنجاح إلى المدير!');
+    }
+
+    function loadStaffTargetInfo() {
+      const locations = JSON.parse(localStorage.getItem('fleet_staff_locations') || '{}');
+      const staffData = locations[currentUser.id] || { achievedUsers: 0, zone: 'غير محدد' };
+      const count = staffData.achievedUsers || 0;
+      const zone = staffData.zone || 'غير محدد';
+      
+      document.getElementById('staffAchievedCount').textContent = count;
+      document.getElementById('staffAssignedZoneBadge').textContent = zone;
+      document.getElementById('feedbackZoneName').value = zone;
+      
+      const percent = Math.min(100, Math.round((count / 40) * 100));
+      document.getElementById('staffProgressBar').style.width = percent + '%';
+    }
+
+    function handleUpdateStaffCount(e) {
+      e.preventDefault();
+      const val = parseInt(document.getElementById('newUsersInput').value);
+      if (isNaN(val)) return;
+
+      const locations = JSON.parse(localStorage.getItem('fleet_staff_locations') || '{}');
+      if (!locations[currentUser.id]) {
+        locations[currentUser.id] = { name: currentUser.name, phone: currentUser.phone, lat: 32.5056, lng: 45.8231, status: 'نشط', lastSync: 'الآن', achievedUsers: 0, zone: 'غير محدد' };
+      }
+
+      locations[currentUser.id].achievedUsers = val;
+      localStorage.setItem('fleet_staff_locations', JSON.stringify(locations));
+      
+      loadStaffTargetInfo();
+      alert('تم تحديث عدد اليوزريات اليومي بنجاح!');
+    }
+
+    function toggleTracking(enable) {
+      const badge = document.getElementById('trackingStatusBadge');
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn = document.getElementById('stopBtn');
+
+      if (enable) {
+        if ("geolocation" in navigator) {
+          watchId = navigator.geolocation.watchPosition(updatePosition, handleGeoError, {
+            enableHighAccuracy: true,
+            maximumAge: 0
+          });
+          badge.textContent = "بث مباشر نشط (الكوت)";
+          badge.className = "text-xs bg-green-100 text-green-700 px-2.5 py-1 rounded-full font-bold status-pulse";
+          startBtn.disabled = true;
+          startBtn.classList.add('opacity-50');
+          stopBtn.disabled = false;
+          stopBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+        }
+      } else {
+        if (watchId) navigator.geolocation.clearWatch(watchId);
+        badge.textContent = "متوقف";
+        badge.className = "text-xs bg-slate-200 text-slate-700 px-2.5 py-1 rounded-full font-bold";
+        startBtn.disabled = false;
+        startBtn.classList.remove('opacity-50');
+        stopBtn.disabled = true;
+        stopBtn.classList.add('opacity-60', 'cursor-not-allowed');
+      }
+    }
+
+    function updatePosition(pos) {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      lastKnownCoords = { lat, lng };
+      const now = new Date().toLocaleTimeString('ar-IQ');
+
+      const locations = JSON.parse(localStorage.getItem('fleet_staff_locations') || '{}');
+      const prevAchieved = locations[currentUser.id] ? locations[currentUser.id].achievedUsers : 0;
+      const prevZone = locations[currentUser.id] ? locations[currentUser.id].zone : 'غير محدد';
+      
+      locations[currentUser.id] = {
+        name: currentUser.name,
+        phone: currentUser.phone || currentUser.id,
+        lat: lat,
+        lng: lng,
+        status: 'نشط',
+        lastSync: now,
+        achievedUsers: prevAchieved,
+        zone: prevZone
+      };
+      localStorage.setItem('fleet_staff_locations', JSON.stringify(locations));
+    }
+
+    function handleGeoError() {
+      const simulatedLat = 32.5056 + (Math.random() - 0.5) * 0.01;
+      const simulatedLng = 45.8231 + (Math.random() - 0.5) * 0.01;
+      updatePosition({ coords: { latitude: simulatedLat, longitude: simulatedLng } });
+    }
+
+    function renderUsersTable() {
+      const users = getUsers();
+      const tbody = document.getElementById('usersTableBody');
+      tbody.innerHTML = '';
+
+      users.forEach(u => {
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-slate-50";
+        tr.innerHTML = `
+          <td class="p-3 font-bold text-slate-800">${u.name}</td>
+          <td class="p-3 text-slate-600 font-mono">${u.phone || u.id}</td>
+          <td class="p-3 text-slate-600 font-mono">••••••••</td>
+          <td class="p-3">
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold ${u.role === 'manager' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}">
+              ${u.role === 'manager' ? 'مدير نظام' : 'موظف ميداني'}
+            </span>
+          </td>
+          <td class="p-3 text-center">
+            <button onclick="editUser('${u.id}')" class="bg-amber-50 text-amber-600 hover:bg-amber-100 p-1.5 rounded-lg text-xs font-bold transition me-1">
+              <i class="fa-solid fa-pen"></i>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function editUser(userId) {
+      const users = getUsers();
+      const u = users.find(x => x.id === userId);
+      if (!u) return;
+
+      document.getElementById('editUserId').value = u.id;
+      document.getElementById('formName').value = u.name;
+      document.getElementById('formUsername').value = u.phone || u.id;
+      document.getElementById('formPassword').value = u.pass;
+      document.getElementById('formRole').value = u.role;
+    }
+
+    function handleSaveUser(e) {
+      e.preventDefault();
+      const id = document.getElementById('editUserId').value;
+      const name = document.getElementById('formName').value.trim();
+      const username = document.getElementById('formUsername').value.trim();
+      const pass = document.getElementById('formPassword').value.trim();
+      const role = document.getElementById('formRole').value;
+
+      let users = getUsers();
+      if (id) {
+        users = users.map(u => u.id === id ? { ...u, name, phone: username, pass, role } : u);
+      } else {
+        const newId = 'user_' + Date.now();
+        users.push({ id: newId, name, phone: username, pass, role });
+      }
+
+      saveUsers(users);
+      document.getElementById('editUserId').value = '';
+      document.getElementById('formName').value = '';
+      document.getElementById('formUsername').value = '';
+      document.getElementById('formPassword').value = '';
+      
+      renderUsersTable();
+      renderManagerPanel();
+      alert('تم حفظ بيانات الحساب بنجاح!');
+    }
+
+    initState();
+  </script>
+</body>
+</html>
